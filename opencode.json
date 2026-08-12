@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "ui-expert": {
+      "description": "Expert in modern clean UI design, CSS styling, and frontend best practices",
+      "mode": "subagent",
+      "model": "openrouter/google/gemma-4-31b-it"
+    }
+  }
+}

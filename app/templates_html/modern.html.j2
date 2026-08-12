@@ -1,0 +1,172 @@
+{% autoescape true %}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ cv.personal.name or "Resume" }}</title>
+<style>
+@page { size: Letter; margin: 12mm 14mm; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: Helvetica, Arial, sans-serif; font-size: 10.5pt; line-height: 1.45; color: #1f2937; }
+.resume { width: 100%; }
+header { text-align: center; padding-bottom: 8pt; border-bottom: 2pt solid {{ accent }}; margin-bottom: 16pt; }
+.name { font-size: 24pt; font-weight: 700; color: #111827; letter-spacing: 0.5pt; }
+.title { font-size: 12.5pt; color: #374151; margin-top: 2pt; }
+.contact { font-size: 9.5pt; color: #4b5563; margin-top: 6pt; }
+section { margin-top: 15pt; page-break-before: auto; page-break-inside: avoid; }
+h2 { font-size: 11.5pt; font-weight: 700; letter-spacing: 1.5pt; color: {{ accent }}; border-bottom: 1pt solid #e5e7eb; padding-bottom: 3pt; margin-bottom: 7pt; }
+.item { page-break-inside: avoid; margin: 8pt 0 0; }
+.item-head { font-weight: 700; }
+.item-meta { font-size: 9.5pt; color: #6b7280; margin-top: 1pt; }
+.item-desc { margin-top: 2pt; }
+.skill-line { margin: 3pt 0; }
+p { margin: 0; }
+ul { list-style: disc; margin: 4pt 0 4pt 18pt; }
+li { margin: 2pt 0; }
+</style>
+</head>
+<body>
+<div class="resume" style="--accent: {{ accent }}">
+  {% set personal = cv.personal %}
+  <header>
+    {% if personal.name %}<div class="name">{{ personal.name }}</div>{% endif %}
+    {% if personal.title %}<div class="title">{{ personal.title }}</div>{% endif %}
+    {% set contact = [] %}
+    {% for c in [personal.email, personal.phone, personal.location, personal.website, personal.linkedin, personal.github] %}
+      {% if c and c.strip() %}{% set _ = contact.append(c) %}{% endif %}
+    {% endfor %}
+    {% if contact %}<div class="contact">{{ contact | join(' | ') }}</div>{% endif %}
+  </header>
+  {% set sections = {} %}
+  {% if cv.summary %}
+  {% set body %}  <section>
+    <h2>{{ stitle('summary', 'SUMMARY') }}</h2>
+    <p>{{ cv.summary }}</p>
+  </section>
+{% endset %}
+  {% set _ = sections.update({"summary": body}) %}
+  {% endif %}
+  {% if cv.experience %}
+  {% set body %}  <section>
+    <h2>{{ stitle('experience', 'EXPERIENCE') }}</h2>
+    {% for item in cv.experience %}
+    <div class="item">
+      {% set head = [] %}
+      {% for h in [item.role, item.company] %}{% if h and h.strip() %}{% set _ = head.append(h) %}{% endif %}{% endfor %}
+      {% if head %}<div class="item-head">{{ head | join(' - ') }}</div>{% endif %}
+      {% set dates = "" %}
+      {% if item.dates.start or item.dates.end %}{% set dates = (item.dates.start ~ ' - ' ~ item.dates.end) | trim(' -') %}{% endif %}
+      {% set meta = [] %}
+      {% for m in [item.location, dates] %}{% if m and m.strip() %}{% set _ = meta.append(m) %}{% endif %}{% endfor %}
+      {% if meta %}<div class="item-meta">{{ meta | join(' | ') }}</div>{% endif %}
+      {% set bullets = [] %}
+      {% for b in item.bullets %}{% if b and b.strip() %}{% set _ = bullets.append(b) %}{% endif %}{% endfor %}
+      {% if bullets %}
+      <ul>
+        {% for b in bullets %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+{% endset %}
+  {% set _ = sections.update({"experience": body}) %}
+  {% endif %}
+  {% if cv.education %}
+  {% set body %}  <section>
+    <h2>{{ stitle('education', 'EDUCATION') }}</h2>
+    {% for item in cv.education %}
+    <div class="item">
+      {% set head = [] %}
+      {% for h in [item.degree, item.field] %}{% if h and h.strip() %}{% set _ = head.append(h) %}{% endif %}{% endfor %}
+      {% if head %}<div class="item-head">{{ head | join(' in ') }}</div>{% endif %}
+      {% set dates = "" %}
+      {% if item.dates.start or item.dates.end %}{% set dates = (item.dates.start ~ ' - ' ~ item.dates.end) | trim(' -') %}{% endif %}
+      {% set meta = [] %}
+      {% for m in [item.institution, item.gpa, dates] %}{% if m and m.strip() %}{% set _ = meta.append(m) %}{% endif %}{% endfor %}
+      {% if meta %}<div class="item-meta">{{ meta | join(' | ') }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </section>
+{% endset %}
+  {% set _ = sections.update({"education": body}) %}
+  {% endif %}
+  {% if cv.skills %}
+  {% set body %}  <section>
+    <h2>{{ stitle('skills', 'SKILLS') }}</h2>
+    {% for group in cv.skills %}
+    {% if group.skills %}
+    <p class="skill-line">{% if group.category %}<span style="font-weight: 700;">{{ group.category }}:</span> {% endif %}{{ group.skills | join(', ') }}</p>
+    {% endif %}
+    {% endfor %}
+  </section>
+{% endset %}
+  {% set _ = sections.update({"skills": body}) %}
+  {% endif %}
+  {% if cv.projects %}
+  {% set body %}  <section>
+    <h2>{{ stitle('projects', 'PROJECTS') }}</h2>
+    {% for proj in cv.projects %}
+    <div class="item">
+      {% set head = [] %}
+      {% for h in [proj.name, proj.link] %}{% if h and h.strip() %}{% set _ = head.append(h) %}{% endif %}{% endfor %}
+      {% if head %}<div class="item-head">{{ head | join(' - ') }}</div>{% endif %}
+      {% if proj.description %}<p class="item-desc">{{ proj.description }}</p>{% endif %}
+      {% set bullets = [] %}
+      {% for b in proj.bullets %}{% if b and b.strip() %}{% set _ = bullets.append(b) %}{% endif %}{% endfor %}
+      {% if bullets %}
+      <ul>
+        {% for b in bullets %}<li>{{ b }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </section>
+{% endset %}
+  {% set _ = sections.update({"projects": body}) %}
+  {% endif %}
+  {% if cv.certifications %}
+  {% set body %}  <section>
+    <h2>{{ stitle('certifications', 'CERTIFICATIONS') }}</h2>
+    {% for cert in cv.certifications %}
+    {% set line = [] %}
+    {% for c in [cert.name, cert.issuer, cert.year] %}{% if c and c.strip() %}{% set _ = line.append(c) %}{% endif %}{% endfor %}
+    {% if line %}<p class="skill-line">{{ line | join(' - ') }}</p>{% endif %}
+    {% endfor %}
+  </section>
+{% endset %}
+  {% set _ = sections.update({"certifications": body}) %}
+  {% endif %}
+  {% if cv.languages %}
+  {% set body %}  <section>
+    <h2>{{ stitle('languages', 'LANGUAGES') }}</h2>
+    {% for lang in cv.languages %}
+    {% set line = [] %}
+    {% for l in [lang.name, lang.level] %}{% if l and l.strip() %}{% set _ = line.append(l) %}{% endif %}{% endfor %}
+    {% if line %}<p class="skill-line">{{ line | join(' - ') }}</p>{% endif %}
+    {% endfor %}
+  </section>
+{% endset %}
+  {% set _ = sections.update({"languages": body}) %}
+  {% endif %}
+  {% if cv.custom_sections %}
+  {% set body %}{% for section in cv.custom_sections %}{% if section.title or section.bullets %}  <section>
+    {% if section.title %}<h2>{{ section.title | upper }}</h2>{% endif %}
+    {% set bullets = [] %}
+    {% for b in section.bullets %}{% if b and b.strip() %}{% set _ = bullets.append(b) %}{% endif %}{% endfor %}
+    {% if bullets %}
+    <ul>
+      {% for b in bullets %}<li>{{ b }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+{% endif %}{% endfor %}{% endset %}
+  {% set _ = sections.update({"custom_sections": body}) %}
+  {% endif %}
+  {% set emitted = [] %}
+  {% for sid in section_order %}{% if sid not in emitted %}{{ "\n" }}{% if sid in sections %}{{ sections[sid] | safe }}{% endif %}{% set _ = emitted.append(sid) %}{% endif %}{% endfor %}{% for sid in sections %}{% if sid not in emitted %}{{ "\n" }}{{ sections[sid] | safe }}{% endif %}{% endfor %}
+
+</div>
+</body>
+</html>
+{% endautoescape %}
