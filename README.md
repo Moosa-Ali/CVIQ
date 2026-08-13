@@ -1,3 +1,5 @@
+![CVIQ — CV Creator & Optimizer](./assets/cviq-readme-banner.png)
+
 # CVIQ
 
 *CV Creator & Optimizer* — a single-user web app to **create** an ATS-friendly CV from scratch or **optimize**
