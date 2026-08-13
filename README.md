@@ -1,4 +1,4 @@
-![CVIQ — CV Creator & Optimizer](./cviq-readme-banner.png)
+![CVIQ — CV Creator & Optimizer](./cvig-readme-banner.png)
 
 # CVIQ
 
