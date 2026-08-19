@@ -108,9 +108,33 @@ TITLED_SECTIONS = (
 )
 
 
+class TemplateConfig(BaseModel):
+    """Visual toggles for the universal CV template (the single design all
+    legacy template ids now resolve to as named presets).
+
+    - ``font``: ``"sans"`` | ``"serif"`` (rendered as Helvetica/Arial vs
+      Georgia/Times).
+    - ``header_alignment``: ``"left"`` | ``"center"``.
+    - ``header_divider``: line under the name/title header.
+    - ``section_divider``: line under each section heading.
+    - ``heading_case``: ``"upper"`` | ``"title"`` (UPPERCASE vs Title Case
+      section headings).
+
+    When ``None`` on a CV, the renderer falls back to the preset mapped from the
+    CV's ``template`` id (so legacy saved CVs render as before).
+    """
+
+    font: str = "sans"
+    header_alignment: str = "center"
+    header_divider: bool = True
+    section_divider: bool = True
+    heading_case: str = "upper"
+
+
 class CVData(BaseModel):
     template: str = "modern"
     accent: str = "#2563eb"
+    template_config: Optional[TemplateConfig] = None
     personal: PersonalInfo = Field(default_factory=PersonalInfo)
     summary: str = ""
     experience: list[ExperienceItem] = Field(default_factory=list)

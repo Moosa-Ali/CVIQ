@@ -1,0 +1,193 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#app"
+  - banner [ref=e3]:
+    - img "CVIQ — CV Creator & Optimizer" [ref=e5] [cursor=pointer]
+    - navigation "Primary" [ref=e6]:
+      - link "Home" [ref=e7] [cursor=pointer]:
+        - /url: "#/"
+      - link "Editor" [ref=e8] [cursor=pointer]:
+        - /url: "#/editor"
+      - link "My CVs" [ref=e9] [cursor=pointer]:
+        - /url: "#/library"
+      - link "Settings" [ref=e10] [cursor=pointer]:
+        - /url: "#/settings"
+    - generic "Session AI Cost" [ref=e11]:
+      - generic [ref=e13]: google/gemma-4-31b-it
+      - generic [ref=e14]: $0.00
+  - main [ref=e12]:
+    - heading "Editor & Preview" [level=1] [ref=e16]
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e21]:
+          - heading "Start building your CV" [level=3] [ref=e24]
+          - paragraph [ref=e25]: Use the form below to fill it in — or start from the Home page.
+          - generic [ref=e26]:
+            - link "Create a new CV" [ref=e27] [cursor=pointer]:
+              - /url: "#/build"
+            - link "Go to Home" [ref=e28] [cursor=pointer]:
+              - /url: "#/"
+        - generic [ref=e29]:
+          - heading "Personal" [level=2] [ref=e30]
+          - generic [ref=e31]:
+            - generic [ref=e32]:
+              - generic [ref=e33]: Name
+              - textbox [ref=e34]
+            - generic [ref=e35]:
+              - generic [ref=e36]: Title
+              - textbox [ref=e37]
+            - generic [ref=e38]:
+              - generic [ref=e39]: Email
+              - textbox [ref=e40]
+            - generic [ref=e41]:
+              - generic [ref=e42]: Phone
+              - textbox [ref=e43]
+            - generic [ref=e44]:
+              - generic [ref=e45]: Location
+              - textbox [ref=e46]
+            - generic [ref=e47]:
+              - generic [ref=e48]: Website
+              - textbox [ref=e49]
+            - generic [ref=e50]:
+              - generic [ref=e51]: LinkedIn
+              - textbox [ref=e52]
+            - generic [ref=e53]:
+              - generic [ref=e54]: GitHub
+              - textbox [ref=e55]
+        - generic [ref=e56]:
+          - heading "Summary & Template" [level=2] [ref=e57]
+          - generic [ref=e58]:
+            - generic [ref=e59]: Summary
+            - textbox [ref=e60]
+            - generic [ref=e61]: 0 / 3,000
+          - generic [ref=e62]:
+            - heading "Template & Accent" [level=2] [ref=e63]
+            - generic [ref=e64]:
+              - generic [ref=e65]: Simple layouts
+              - generic [ref=e66]:
+                - button "M Modern" [ref=e67] [cursor=pointer]:
+                  - generic [ref=e68]: M
+                  - generic [ref=e69]: Modern
+                - button "C Classic" [ref=e70] [cursor=pointer]:
+                  - generic [ref=e71]: C
+                  - generic [ref=e72]: Classic
+                - button "M Minimal" [ref=e73] [cursor=pointer]:
+                  - generic [ref=e74]: M
+                  - generic [ref=e75]: Minimal
+            - generic [ref=e76]:
+              - generic [ref=e77]: Gallery designs
+              - generic [ref=e78]:
+                - button "awesome-cv Dedicated design" [ref=e79] [cursor=pointer]:
+                  - generic [ref=e80]:
+                    - text: awesome-cv
+                    - generic [ref=e81]: Dedicated design
+                - button "classic Dedicated design" [ref=e82] [cursor=pointer]:
+                  - generic [ref=e83]:
+                    - text: classic
+                    - generic [ref=e84]: Dedicated design
+                - button "cvresume Dedicated design" [ref=e85] [cursor=pointer]:
+                  - generic [ref=e86]:
+                    - text: cvresume
+                    - generic [ref=e87]: Dedicated design
+                - button "deedy-resume Dedicated design" [ref=e88] [cursor=pointer]:
+                  - generic [ref=e89]:
+                    - text: deedy-resume
+                    - generic [ref=e90]: Dedicated design
+                - button "minimal Dedicated design" [ref=e91] [cursor=pointer]:
+                  - generic [ref=e92]:
+                    - text: minimal
+                    - generic [ref=e93]: Dedicated design
+                - button "modern Dedicated design" [ref=e94] [cursor=pointer]:
+                  - generic [ref=e95]:
+                    - text: modern
+                    - generic [ref=e96]: Dedicated design
+                - button "newfuture-cv Dedicated design" [ref=e97] [cursor=pointer]:
+                  - generic [ref=e98]:
+                    - text: newfuture-cv
+                    - generic [ref=e99]: Dedicated design
+                - button "universal-resume Dedicated design" [ref=e100] [cursor=pointer]:
+                  - generic [ref=e101]:
+                    - text: universal-resume
+                    - generic [ref=e102]: Dedicated design
+            - generic [ref=e103]:
+              - generic [ref=e104]: Accent
+              - generic [ref=e105]:
+                - button "Blue" [ref=e106] [cursor=pointer]
+                - button "Slate" [ref=e107] [cursor=pointer]
+                - button "Emerald" [ref=e108] [cursor=pointer]
+                - button "Rose" [ref=e109] [cursor=pointer]
+                - button "Violet" [ref=e110] [cursor=pointer]
+                - button "Amber" [ref=e111] [cursor=pointer]
+                - textbox "Custom color" [ref=e112] [cursor=pointer]: "#2563eb"
+          - button "AI Assist Summary" [ref=e113] [cursor=pointer]
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - heading "Experience" [level=2] [ref=e118]
+            - button "Toggle Experience" [expanded] [ref=e119] [cursor=pointer]
+          - generic [ref=e122]:
+            - generic [ref=e123]: No experience yet.
+            - button "+ Add experience" [ref=e124] [cursor=pointer]
+        - generic [ref=e125]:
+          - generic [ref=e126]:
+            - heading "Education" [level=2] [ref=e127]
+            - button "Toggle Education" [expanded] [ref=e128] [cursor=pointer]
+          - generic [ref=e131]:
+            - generic [ref=e132]: No education yet.
+            - button "+ Add education" [ref=e133] [cursor=pointer]
+        - generic [ref=e134]:
+          - generic [ref=e135]:
+            - heading "Skills" [level=2] [ref=e136]
+            - button "Toggle Skills" [expanded] [ref=e137] [cursor=pointer]
+          - generic [ref=e140]:
+            - generic [ref=e141]: No skills yet.
+            - button "+ Add skill group" [ref=e142] [cursor=pointer]
+        - generic [ref=e143]:
+          - generic [ref=e144]:
+            - heading "Projects" [level=2] [ref=e145]
+            - button "Toggle Projects" [expanded] [ref=e146] [cursor=pointer]
+          - generic [ref=e149]:
+            - generic [ref=e150]: No projects yet.
+            - button "+ Add project" [ref=e151] [cursor=pointer]
+        - generic [ref=e152]:
+          - generic [ref=e153]:
+            - heading "Certifications" [level=2] [ref=e154]
+            - button "Toggle Certifications" [expanded] [ref=e155] [cursor=pointer]
+          - generic [ref=e158]:
+            - generic [ref=e159]: No certifications yet.
+            - button "+ Add certification" [ref=e160] [cursor=pointer]
+        - generic [ref=e161]:
+          - generic [ref=e162]:
+            - heading "Languages" [level=2] [ref=e163]
+            - button "Toggle Languages" [expanded] [ref=e164] [cursor=pointer]
+          - generic [ref=e167]:
+            - generic [ref=e168]: No languages yet.
+            - button "+ Add language" [ref=e169] [cursor=pointer]
+        - generic [ref=e170]:
+          - generic [ref=e171]:
+            - heading "Custom sections" [level=2] [ref=e172]
+            - button "Toggle Custom sections" [expanded] [ref=e173] [cursor=pointer]
+          - generic [ref=e176]:
+            - generic [ref=e177]: No custom sections yet.
+            - button "+ Add custom section" [ref=e178] [cursor=pointer]
+      - generic [ref=e180]:
+        - generic [ref=e181]:
+          - generic [ref=e182]:
+            - generic [ref=e183]: Live Preview
+            - button "Assistant" [ref=e184] [cursor=pointer]
+            - button "ATS Check" [ref=e187] [cursor=pointer]
+            - button "Re-analyze" [ref=e190] [cursor=pointer]
+          - generic [ref=e193]:
+            - button "Zoom out" [ref=e194] [cursor=pointer]: −
+            - generic [ref=e195]: 100%
+            - button "Zoom in" [ref=e196] [cursor=pointer]: +
+            - generic [ref=e197] [cursor=pointer]:
+              - checkbox "Fit width" [checked] [ref=e198]
+              - text: Fit width
+            - generic [ref=e199]: Modern
+          - iframe [ref=e202]:
+            - banner [ref=f1e3]
+        - generic [ref=e203]:
+          - button "Save to library" [ref=e204] [cursor=pointer]
+          - generic [ref=e207]:
+            - button "Download PDF" [ref=e208] [cursor=pointer]
+            - button "Download Word" [ref=e211] [cursor=pointer]

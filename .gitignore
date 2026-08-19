@@ -2,6 +2,14 @@
 .cvmod/
 node_modules/
 .opencode/
+!.opencode/
+.opencode/*
+!.opencode/agents/
+!.opencode/agents/**
+!.opencode/commands/
+!.opencode/commands/**
+!.opencode/skills/
+!.opencode/skills/**
 .omo/
 .codegraph/
 models/
@@ -29,3 +37,5 @@ __pycache__/
 *.ppk
 id_rsa
 id_ed25519
+sdlc
+sdlc/

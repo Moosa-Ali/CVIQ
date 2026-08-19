@@ -15,7 +15,9 @@ model (LLM). Final output exports to **PDF** and **Word (.docx)**.
   LLM; text-based files send extracted structure only.
 - Paste a JD, run an LLM analysis (ATS match score, matched/missing keywords,
   section scores, comments), and review **editable, per-item suggestions** in a 5-step
-  Optimize loop that ends in a **Results & Export** step (score delta + export).
+  Optimize loop where Apply routes you to the **Editor** with a review banner
+  (template + color picker); the **Results & Export** step with score delta
+  and export remains reachable.
 - Chat with the **Assistant** (Chat 2.0): history-aware, dockable, and its proposed
   edits apply to the CV in one click.
 - Edit everything in the two-pane editor with a **live server-rendered preview** that
@@ -42,7 +44,8 @@ model (LLM). Final output exports to **PDF** and **Word (.docx)**.
   JD, get a scored analysis and ordered suggestions you accept/reject/edit before
   applying; every download is freshly rendered from the updated structure (nothing is
   edited in place in the original file).
-- **5-step Optimize loop** — Upload → Analyze → Review → Apply → **Results & Export**:
+- **5-step Optimize loop** — Upload → Analyze → Review → Apply (lands in the **Editor**
+  with a review banner for template/color) → **Results & Export**:
   re-analyze to see your **score delta** (62 → 84), a sparkline of score history, an
   applied-changes summary, and PDF/DOCX buttons right in the flow. Applied suggestions
   lock ("Applied ✓"), analysis suggestions import into Review in one click, and stale
@@ -105,49 +108,56 @@ FastAPI app (app/main.py) ── serves static frontend/ ──► index.html, s
 
 ---
 
-## Setup
+## Prerequisites
 
-Requires Python 3.12.
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-> On plain Windows `cmd`, activate with `.venv\Scripts\activate.bat` instead.
+* **Python 3.12 or later** - [Download from python.org](https://www.python.org/downloads/)
+  * On Windows, check "Add Python to PATH" during installation.
+  * Verify: `python --version` should show `3.12.x` or later.
+* **Git** - [Download from git-scm.com](https://git-scm.com/) (to clone the repository).
+* No other dependencies required - everything else is installed automatically.
 
 ---
 
-## Run
+## Quick Start
 
-From the project root, either use a launcher script:
+```bash
+# 1. Clone the repository
+git clone <repo-url> CVIQ
+cd CVIQ
 
-```bat
-start.cmd
+# 2. Run the launcher
+start.cmd        # on Command Prompt
+# or
+.\start.ps1      # on PowerShell
 ```
 
-or in PowerShell:
+The launcher will:
+1. Find Python 3.12+ on your system (tries `python3`, `python`, `py -3.12`, `py -3`).
+2. Create a virtual environment (`.venv\`) if one doesn't exist.
+3. Install all dependencies from `requirements.txt`.
+4. Start the server at **http://127.0.0.1:8000**.
+
+> **Note:** the launcher hard-codes `--host 127.0.0.1 --port 8000` and does not use
+> `--reload`. For development with auto-reload, see below.
+
+---
+
+## Manual Setup
+
+If you prefer to set up the environment yourself:
 
 ```powershell
-.\start.ps1
-```
-
-or run uvicorn directly (optionally with auto-reload for development):
-
-```powershell
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
-# or without --reload for a plain run
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1    # or .venv\Scripts\activate.bat on cmd
+pip install -r requirements.txt
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Then open **http://127.0.0.1:8000** in your browser.
+### Development Run (with auto-reload)
 
-> `start.cmd` / `start.ps1` create `.venv` if it's missing. If the normal `python`
-> command is unavailable they fall back to a bundled interpreter path; if that's also
-> missing, you'll be prompted to install Python and create the venv manually (see Setup).
-> **Note:** the cron-style launcher hard-codes `--host 127.0.0.1 --port 8000` and does
-> not use `--reload`.
+```powershell
+& ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
 
 ---
 
@@ -213,9 +223,10 @@ Additional app-level settings exposed by `app/config.py` use the `CVMOD_` prefix
    confidence, paste the JD, and run **Analysis**.
 4. **Optimize** (5 steps): review the score, `jd_profile` card and unified gaps panel
    (Analyze) → accept/reject/edit suggestions, import analysis suggestions, bulk
-   accept/reject (Review) → Apply → **Results & Export**: score delta + sparkline +
-   PDF/DOCX, then Re-analyze or Keep editing. The **Assistant** is available on every
-   step.
+accept/reject (Review) → Apply (lands in the **Editor** with a "Suggestions
+    applied" review banner prompting template/color; **Results & Export** step still shows
+    score delta + sparkline + PDF/DOCX + Re-analyze). The **Assistant** is available on
+    every step.
 5. **Editor / Preview**: fine-tune the two-pane editor — the live preview is
    server-rendered from the real template and updates as you type; use **ATS Check**,
    **Re-analyze**, **Assistant**, and **Save to library** (Ctrl+S). Your work autosaves
@@ -258,7 +269,7 @@ classification fallback (heuristic with no LLM).
 Run it from the project root with the venv Python:
 
 ```powershell
-$env:PYTHONPATH = "C:\D-Drive\Work\CVIQ"
+$env:PYTHONPATH = (Get-Location).Path
 & ".\.venv\Scripts\python.exe" tests\smoke_test.py
 ```
 

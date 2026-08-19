@@ -1,6 +1,6 @@
 import logging
 import os
-from typing import Protocol
+from typing import Optional, Protocol
 
 from pydantic import BaseModel
 
@@ -74,6 +74,8 @@ class LLMConfig(BaseModel):
     bedrock_secret_key: str = ""
     bedrock_region: str = ""
     bedrock_model: str = "anthropic.claude-sonnet-4-5-v2-0"
+    price_per_1m_prompt: float = 0.0
+    price_per_1m_completion: float = 0.0
 
     def redacted(self) -> "LLMConfig":
         data = self.model_dump()
@@ -145,3 +147,41 @@ def get_client(cfg: LLMConfig) -> LLMClient:
 
         return BedrockClient(cfg)
     raise LLMConfigError(f"Unknown LLM provider: {cfg.provider!r}")
+
+
+class Usage(BaseModel):
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    model: str = ""
+    provider: str = ""
+    cost: float = 0.0
+
+
+def get_client_usage(client) -> Usage | None:
+    """Read accumulated token usage from a provider client, or None when the
+    client does not track usage (e.g. the test FakeLLM)."""
+    acc = getattr(client, "_usage", None)
+    if acc is None:
+        return None
+    return Usage(
+        prompt_tokens=int(acc.get("prompt_tokens", 0)),
+        completion_tokens=int(acc.get("completion_tokens", 0)),
+        model=getattr(client, "model", "") or "",
+        provider=getattr(client, "provider_name", "") or "",
+    )
+
+
+def compute_cost(usage: Usage, cfg: LLMConfig) -> float:
+    return round(
+        usage.prompt_tokens * float(cfg.price_per_1m_prompt or 0.0) / 1_000_000
+        + usage.completion_tokens * float(cfg.price_per_1m_completion or 0.0) / 1_000_000,
+        6,
+    )
+
+
+def usage_with_cost(client, cfg: LLMConfig) -> Usage | None:
+    usage = get_client_usage(client)
+    if usage is None:
+        return None
+    usage.cost = compute_cost(usage, cfg)
+    return usage

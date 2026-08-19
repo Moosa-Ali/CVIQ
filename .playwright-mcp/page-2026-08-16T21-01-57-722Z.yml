@@ -1,0 +1,48 @@
+- generic [active] [ref=f1e1]:
+  - link "Skip to content" [ref=f1e2] [cursor=pointer]:
+    - /url: "#app"
+  - banner [ref=f1e3]:
+    - img "CVIQ — CV Creator & Optimizer" [ref=f1e5] [cursor=pointer]
+    - navigation "Primary" [ref=f1e6]:
+      - link "Home" [ref=f1e7] [cursor=pointer]:
+        - /url: "#/"
+      - link "Editor" [ref=f1e8] [cursor=pointer]:
+        - /url: "#/editor"
+      - link "My CVs" [ref=f1e9] [cursor=pointer]:
+        - /url: "#/library"
+      - link "Settings" [ref=f1e10] [cursor=pointer]:
+        - /url: "#/settings"
+    - generic "Session AI Cost" [ref=f1e11]:
+      - generic [ref=f1e12]: anthropic/claude-sonnet-4-6
+      - generic [ref=f1e13]: $0.00
+  - main [ref=f1e14]:
+    - generic [ref=f1e15]:
+      - heading "Settings" [level=1] [ref=f1e16]
+      - paragraph [ref=f1e17]: Configure the LLM provider used for AI-powered CV features.
+    - generic [ref=f1e19]:
+      - heading "LLM provider not configured" [level=3] [ref=f1e20]
+      - paragraph [ref=f1e23]: Connect an LLM provider (OpenRouter) to enable AI features like parsing, analysis and tailoring.
+    - generic [ref=f1e24]:
+      - generic [ref=f1e25]:
+        - heading "Provider" [level=2] [ref=f1e26]
+        - button "OpenRouter" [ref=f1e28] [cursor=pointer]
+        - generic [ref=f1e29]:
+          - generic [ref=f1e30]:
+            - generic [ref=f1e31]: OpenRouter API Key
+            - textbox "OpenRouter API Key" [ref=f1e32]:
+              - /placeholder: sk-or-...
+          - generic [ref=f1e33]:
+            - generic [ref=f1e34]: Model
+            - textbox "Model" [ref=f1e35]: anthropic/claude-sonnet-4-6
+      - generic [ref=f1e36]:
+        - heading "Model Pricing (USD)" [level=2] [ref=f1e37]
+        - paragraph [ref=f1e38]: Cost per 1M tokens — applies to every model. Set these to match your provider's published prices.
+        - generic [ref=f1e39]:
+          - generic [ref=f1e40]: Prompt / 1M tokens ($)
+          - spinbutton "Prompt / 1M tokens ($)" [ref=f1e41]: "0"
+        - generic [ref=f1e42]:
+          - generic [ref=f1e43]: Completion / 1M tokens ($)
+          - spinbutton "Completion / 1M tokens ($)" [ref=f1e44]: "0"
+      - generic [ref=f1e45]:
+        - button "Test Connection" [ref=f1e46] [cursor=pointer]
+        - button "Save Configuration" [ref=f1e47] [cursor=pointer]

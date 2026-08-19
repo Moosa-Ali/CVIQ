@@ -42,6 +42,7 @@ class BedrockClient:
         self.secret_key = cfg.bedrock_secret_key
         self.region = cfg.bedrock_region
         self.model = cfg.bedrock_model
+        self._usage = {"prompt_tokens": 0, "completion_tokens": 0}
 
     def _runtime(self):
         import boto3
@@ -75,6 +76,12 @@ class BedrockClient:
             text = "".join(parts)
         except (KeyError, TypeError) as exc:
             raise LLMError("Unexpected Bedrock response shape") from exc
+        u = resp.get("usage") or {}
+        try:
+            self._usage["prompt_tokens"] += int(u.get("inputTokens", 0) or 0)
+            self._usage["completion_tokens"] += int(u.get("outputTokens", 0) or 0)
+        except (TypeError, ValueError):
+            pass
         return text
 
     def test(self) -> None:

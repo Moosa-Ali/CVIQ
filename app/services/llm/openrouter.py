@@ -49,6 +49,15 @@ class OpenRouterClient:
         self.api_key = cfg.openrouter_api_key
         self.model = cfg.openrouter_model
         self.endpoint = "https://openrouter.ai/api/v1/chat/completions"
+        self._usage = {"prompt_tokens": 0, "completion_tokens": 0}
+
+    def _record_usage(self, data: dict) -> None:
+        u = data.get("usage") or {}
+        try:
+            self._usage["prompt_tokens"] += int(u.get("prompt_tokens", 0) or 0)
+            self._usage["completion_tokens"] += int(u.get("completion_tokens", 0) or 0)
+        except (TypeError, ValueError):
+            pass
 
     def _request(self, payload: dict) -> dict:
         import httpx
@@ -134,6 +143,7 @@ class OpenRouterClient:
         }
         data = self._request(payload)
         content, finish_reason, reasoning = self._extract(data)
+        self._record_usage(data)
 
         # Truncation retry: if the model ran out of tokens with no content (e.g. a reasoning
         # model that spent its whole budget reasoning), retry once with a much larger budget.
@@ -145,6 +155,7 @@ class OpenRouterClient:
             )
             data = self._request({**payload, "max_tokens": retry_tokens})
             content, finish_reason, reasoning = self._extract(data)
+            self._record_usage(data)
 
         if not content:
             if finish_reason == "length":

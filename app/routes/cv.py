@@ -2,6 +2,7 @@ import logging
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from ..config import settings
@@ -9,8 +10,9 @@ from ..services.cv import analyzer, assist, gaps, library, parser, session, tail
 from ..services.cv.classify import classify_to_schema, heuristic_flags, merge_flags
 from ..services.cv.json_util import cap_vision_images
 from ..services.cv.models import CVData, Suggestion
+from ..services.export.render_html import render_html
 from ..services.llm import LLMClient, LLMConfigError, LLMError
-from ..services.llm.base import friendly_llm_error
+from ..services.llm.base import friendly_llm_error, usage_with_cost
 
 logger = logging.getLogger("cviq")
 
@@ -82,6 +84,18 @@ def _guard_cv_size(cv: CVData) -> None:
             status_code=413,
             detail="CV payload too large — maximum saved CV size is 5 MB.",
         )
+
+
+def _usage_for(client) -> dict | None:
+    """Accumulated token usage + cost for the request's LLM client, or None
+    when the client does not track usage (e.g. the test FakeLLM)."""
+    if client is None:
+        return None
+    from ..services.llm import config_store
+
+    cfg = config_store.load_config(settings.data_dir)
+    u = usage_with_cost(client, cfg)
+    return u.model_dump() if u is not None else None
 
 
 class AnalyzeRequest(BaseModel):
@@ -232,6 +246,7 @@ def parse_upload(file: UploadFile):
         "image_mode": is_image_pdf,
         "confidence_flags": [flag.model_dump() for flag in flags],
         "classification": classification,
+        "usage": _usage_for(client),
     }
 
 
@@ -264,7 +279,9 @@ def analyze_cv(req: AnalyzeRequest, client: LLMClient = _llm_dependency):
         logger.exception("CV analyze failed (LLMError)")
         raise HTTPException(status_code=502, detail=friendly_llm_error(exc))
     report.session_warning = warning
-    return report
+    result = report.model_dump()
+    result["usage"] = _usage_for(client)
+    return result
 
 
 @router.post("/tailor/suggest")
@@ -295,7 +312,7 @@ def tailor_suggest(req: SuggestRequest, client: LLMClient = _llm_dependency):
     except LLMError as exc:
         logger.exception("Tailor suggest failed (LLMError)")
         raise HTTPException(status_code=502, detail=friendly_llm_error(exc))
-    return {"suggestions": suggestions, "session_warning": warning}
+    return {"suggestions": suggestions, "session_warning": warning, "usage": _usage_for(client)}
 
 
 @router.post("/tailor/apply")
@@ -343,6 +360,7 @@ def tailor_chat(req: ChatRequest, client: LLMClient = _llm_dependency):
         "reply": reply,
         "proposed_edits": [s.model_dump() for s in edits],
         "session_warning": warning,
+        "usage": _usage_for(client),
     }
 
 
@@ -359,7 +377,7 @@ def cv_assist(req: AssistRequest, client: LLMClient = _llm_dependency):
     except LLMError as exc:
         logger.exception("CV assist failed (LLMError)")
         raise HTTPException(status_code=502, detail=friendly_llm_error(exc))
-    return {"text": draft}
+    return {"text": draft, "usage": _usage_for(client)}
 
 
 @router.post("/validate")
@@ -387,6 +405,7 @@ def cv_gaps(req: GapsRequest):
         logger.exception("CV gaps failed (LLMError)")
         raise HTTPException(status_code=502, detail=friendly_llm_error(exc))
     result["session_warning"] = warning
+    result["usage"] = _usage_for(client)
     return result
 
 
@@ -417,6 +436,21 @@ def get_library(cid: str):
     if not record:
         raise HTTPException(status_code=404, detail="Library entry not found")
     return record
+
+
+@library_router.get("/{cid}/preview")
+def library_preview(cid: str):
+    """Server-rendered HTML preview of a saved CV (for the My CVs card).
+
+    Returns the full standalone HTML document (same universal renderer used
+    by export), suitable for a scaled-down iframe. ``Cache-Control: no-store``.
+    """
+    record = library.get(settings.data_dir, cid)
+    if not record:
+        raise HTTPException(status_code=404, detail="Library entry not found")
+    cv = record["cv"]
+    html = render_html(cv, cv.template or "modern")
+    return JSONResponse(content={"html": html}, headers={"Cache-Control": "no-store"})
 
 
 @library_router.delete("/{cid}")

@@ -700,10 +700,10 @@ Build / Optimize / Editor / My CVs / Settings** — Settings last):
      `applied == 0`); applied cards are locked ("Applied ✓", actions
      disabled). Apply patches the canonical JSON incl. `section_order` /
      `section_titles` (`reorder`/`rename` suggestions, v3.1).
-   - e. **Results & Export** — final step: new score + **delta vs base**
-     (62 → 84), sparkline of `scoreHistory`, applied-changes summary,
-     **PDF / DOCX** export buttons, **Re-analyze**, **Keep editing**
-     (→ Editor), and the Assistant.
+    - e. **Results & Export** — final step: new score + **delta vs base**
+      (62 → 84), sparkline of `scoreHistory`, applied-changes summary. Applying suggestions now routes the user to the Editor with a one-shot "Suggestions applied" review banner (summarizing changes and directing the user to choose a template and accent color before exporting). The Results & Export step remains available via wizard pills for score delta / re-analyze / export.
+      **PDF / DOCX** export buttons, **Re-analyze**, **Keep editing**
+      (→ Editor), and the Assistant.
    The dockable **Assistant** panel is available from the header on **every**
    step (see §7.4).
 4. **Editor/Preview** — two-pane: left form (all canonical fields incl.
@@ -745,7 +745,7 @@ Client-side only — the backend session store is untouched by drafts.
 
 ### 7.3 Optimize flow — improvement loop, not a conveyor belt
 The v3.1 Optimize wizard is the 5-step loop above (Upload → Analyze → Review →
-Apply → **Results & Export**). Each analyze/re-analyze appends the ATS score
+Apply → **Results & Export**). Applying suggestions routes the user to the Editor with a "Suggestions applied" review banner (pointing at template + accent selection). Each analyze/re-analyze appends the ATS score
 to `OPT_STATE.scoreHistory` (persisted in the draft); the Results step shows
 the delta against `baseScore`, the sparkline, and a summary of what was
 applied. Re-analyzing after applying/edits closes the loop — "your score went

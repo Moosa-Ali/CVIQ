@@ -16,6 +16,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
 
 from ..cv.models import CVData, DEFAULT_SECTION_ORDER
+from ..cv.template_config import resolve_template_config, PRESET_IDS
 
 _TEMPLATES_HTML_DIR = Path(__file__).resolve().parent.parent.parent / "templates_html"
 
@@ -52,17 +53,19 @@ def _stitle(titles: dict, section_id: str, default_title: str) -> str:
 
 
 def render_html(cv: CVData, template_id: str = "modern") -> str:
-    """Render ``cv`` to a full HTML document for the given template id.
+    """Render ``cv`` to a full HTML document using the universal template.
 
-    Unknown/absent template files fall back to the builtin renderer. User
-    content is always escaped (Jinja autoescape for template files,
+    The legacy ``template_id`` (modern/classic/minimal/awesome-cv/deedy-resume/
+    cvresume/universal-resume/newfuture-cv plus gallery ids) resolves to a named
+    preset of visual toggles (``TemplateConfig``); an explicit
+    ``cv.template_config`` set by the UI toggles overrides the preset. User
+    content is always escaped (Jinja autoescape for the universal template,
     ``html.escape`` for the fallback). Section ordering honors
     ``cv.section_order`` (default order when empty) and headings honor
     ``cv.section_titles`` overrides via the ``stitle`` template global.
     """
     template_id = (template_id or "").strip() or "modern"
-    # Pass the RAW accent: Jinja autoescapes template files exactly once. Pre-escaping
-    # here caused a double escape (``&amp;amp;``) for accents such as "Brand & Co".
+    tc = resolve_template_config(cv, template_id)
     context = {
         "cv": cv.model_dump(),
         "accent": str(cv.accent or "#2563eb"),
@@ -70,13 +73,18 @@ def render_html(cv: CVData, template_id: str = "modern") -> str:
         "section_order": _section_order_of(cv),
         "section_titles": dict(cv.section_titles or {}),
         "stitle": lambda sid, default: _stitle(cv.section_titles, sid, default),
+        "tc": tc.model_dump(),
     }
-    try:
-        template = _env.get_template(f"{template_id}.html.j2")
-    except TemplateNotFound:
-        return _render_fallback(context)
-    # Jinja autoescape covers user content inside template files.
-    return template.render(**context)
+    # Known presets (and user-customized configs) render through the universal
+    # template; unknown ids fall through to the builtin fallback renderer.
+    use_universal = template_id in PRESET_IDS or cv.template_config is not None
+    if use_universal:
+        try:
+            template = _env.get_template("universal.html.j2")
+            return template.render(**context)
+        except TemplateNotFound:
+            pass
+    return _render_fallback(context)
 
 
 # ---------------------------------------------------------------------------

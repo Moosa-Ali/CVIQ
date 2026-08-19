@@ -8,13 +8,13 @@ CVs against a Job Description via an LLM. The backend serves a vanilla-JS SPA di
 
 - **No `python` on PATH is assumed.** Always invoke the venv interpreter explicitly:
   `& ".\.venv\Scripts\python.exe" ...`. Launchers `start.cmd` / `start.ps1` create `.venv`
-  if missing (falling back to a bundled `codex-runtimes` interpreter) and run uvicorn on
+  if missing (auto-discovers Python and installs dependencies) and run uvicorn on
   `127.0.0.1:8000` **without `--reload`** (those flags are hard-coded).
 - Dev run with reload: `& ".\.venv\Scripts\python.exe" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
 - **Tests**: the single suite is `tests/smoke_test.py`. Run from project root:
-  `$env:PYTHONPATH = "C:\D-Drive\Work\CVIQ"; & ".\.venv\Scripts\python.exe" tests\smoke_test.py`
+  `$env:PYTHONPATH = (Get-Location).Path; & ".\.venv\Scripts\python.exe" tests\smoke_test.py`
   Expect `ALL SMOKE TESTS PASSED`. It uses a `FakeLLM` (no real API key/network needed).
-- README's testing section references the correct project root: `C:\D-Drive\Work\CVIQ`.
+- README's testing section uses a generic `(Get-Location).Path` for the project root.
 
 ## Architecture / boundaries
 

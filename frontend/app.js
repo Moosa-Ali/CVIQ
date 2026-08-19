@@ -4,9 +4,15 @@
 /* ============================================================
    Global state
    ============================================================ */
+const BEDROCK_ENABLED = false; // Hide AWS Bedrock in Settings until configured (flip to true to re-enable).
+const PROVIDERS_LABEL = BEDROCK_ENABLED ? 'OpenRouter or AWS Bedrock' : 'OpenRouter';
+
 let CURRENT_CV = emptyCV();
 let META = { templates: [], accents: [], defaults: {} };
 let OPT_STATE = {}; // optimize wizard state (per session)
+// Set when the user applies accepted suggestions, to show a one-shot review
+// banner in the Editor instead of forcing a "download or keep editing" choice.
+let OPTIMIZE_REVIEW_PENDING = false;
 let CHAT_LOG = [];
 // Build view is a 2-stage flow: 0 = template gallery, 1 = build form.
 const BUILD_STATE = { stage: 0, templateId: null };
@@ -15,8 +21,34 @@ let TEMPLATE_CATALOG = null;
 // LLM provider configured? Gates AI-only actions app-wide (§4.11).
 let APP_CONFIGURED = false;
 let CONFIG_BANNER_DISMISSED = false;
+let ACTIVE_MODEL = '';
 // Assistant panel state (optimize + editor).
 let ASSISTANT_ACTIVE_TARGET = null; // {label, target} or null
+
+let SESSION_COST = {
+  prompt_tokens: 0,
+  completion_tokens: 0,
+  cost: 0.0,
+};
+
+function addUsage(usage) {
+  if (!usage) return;
+  SESSION_COST.prompt_tokens += usage.prompt_tokens || 0;
+  SESSION_COST.completion_tokens += usage.completion_tokens || 0;
+  SESSION_COST.cost += usage.cost || 0;
+  if (usage.model) ACTIVE_MODEL = usage.model;
+  renderSessionCost();
+}
+
+function renderSessionCost() {
+  const el = document.getElementById('session-cost');
+  if (!el) return;
+  const cost = SESSION_COST.cost;
+  const costStr = `$${cost.toFixed(cost === 0 ? 2 : 4)}`;
+  el.innerHTML = ACTIVE_MODEL
+    ? `<span class="session-cost-model">${esc(ACTIVE_MODEL)}</span><span class="session-cost-amount">${costStr}</span>`
+    : costStr;
+}
 
 /* ============================================================
    Draft persistence (localStorage autosave)
@@ -28,6 +60,7 @@ let DRAFT_TIMER = null;
 function emptyCV() {
   return {
     template: 'modern',
+    template_config: null,
     accent: '#2563eb',
     personal: { name: '', title: '', email: '', phone: '', location: '', website: '', linkedin: '', github: '' },
     summary: '',
@@ -319,7 +352,7 @@ function maybePrependConfiguredBanner(route) {
   banner.className = 'banner config-banner';
   banner.id = 'config-banner';
   banner.innerHTML = `<div class="banner-body"><h3>${icon('alert')} AI features need a provider</h3>
-    <p>Connect OpenRouter or AWS Bedrock to enable AI-powered CV analysis and writing.</p></div>
+    <p>Connect ${PROVIDERS_LABEL} to enable AI-powered CV analysis and writing.</p></div>
     <button class="btn btn-secondary btn-sm" id="config-banner-go">Configure now</button>
     <button class="btn btn-ghost btn-sm" id="config-banner-dismiss">Dismiss</button>`;
   app.prepend(banner);
@@ -347,6 +380,13 @@ async function init() {
     app.dataset.moveBound = '1';
     app.addEventListener('click', onMoveClick);
   }
+  if (!app.dataset.dragBound) {
+    app.dataset.dragBound = '1';
+    app.addEventListener('dragstart', onEditorDragStart);
+    app.addEventListener('dragover', onEditorDragOver);
+    app.addEventListener('drop', onEditorDrop);
+    app.addEventListener('dragend', onEditorDragEnd);
+  }
   // FE-3 delegated UI listeners (bound once): auto-grow, validation blur,
   // present toggle, skill chips, and Ctrl+S saving.
   if (!app.dataset.uiBound) {
@@ -371,7 +411,9 @@ async function init() {
   try {
     const cfg = await api('/api/config');
     APP_CONFIGURED = !!(cfg && cfg.configured);
+    if (cfg) ACTIVE_MODEL = cfg.provider === 'bedrock' ? (cfg.bedrock_model || '') : (cfg.openrouter_model || '');
   } catch (e) { /* leave false */ }
+  renderSessionCost();
   await ensureTemplateCatalog();
   const draft = loadDraft();
   if (draft) showResumePrompt(draft);
@@ -526,7 +568,8 @@ async function renderSettings() {
   try {
     cfg = await api('/api/config');
   } catch (e) { /* ignore */ }
-  const provider = (cfg && cfg.provider) || 'openrouter';
+  // Resolve saved provider; never surface 'bedrock' while BEDROCK_ENABLED is false.
+  const provider = (BEDROCK_ENABLED && cfg && cfg.provider) || 'openrouter';
   // Backend reports `configured` as a plain boolean (cfg.configured()).
   const anyConfigured = !cfg || !!cfg.configured;
 
@@ -537,7 +580,7 @@ async function renderSettings() {
 
   const onboarding = cfg && !anyConfigured
     ? `<div class="banner"><div><h3>${icon('alert')} LLM provider not configured</h3>
-       <p>Connect an LLM provider (OpenRouter or AWS Bedrock) to enable AI features like parsing, analysis and tailoring.</p></div></div>`
+       <p>Connect an LLM provider (${PROVIDERS_LABEL}) to enable AI features like parsing, analysis and tailoring.</p></div></div>`
     : '';
 
   app.innerHTML = `
@@ -551,9 +594,21 @@ async function renderSettings() {
         <h2>Provider</h2>
         <div class="segmented" id="provider-toggle">
           <button type="button" class="${provider === 'openrouter' ? 'active' : ''}" data-provider="openrouter">OpenRouter</button>
-          <button type="button" class="${provider === 'bedrock' ? 'active' : ''}" data-provider="bedrock">AWS Bedrock</button>
+          ${BEDROCK_ENABLED ? `<button type="button" class="${provider === 'bedrock' ? 'active' : ''}" data-provider="bedrock">AWS Bedrock</button>` : ''}
         </div>
         <div id="provider-panes" class="mt"></div>
+      </div>
+      <div class="card">
+        <h2>Model Pricing (USD)</h2>
+        <p class="small muted mb">Cost per 1M tokens — applies to every model. Set these to match your provider's published prices.</p>
+        <div class="field">
+          <label for="price_per_1m_prompt">Prompt / 1M tokens ($)</label>
+          <input type="number" step="0.01" min="0" id="price_per_1m_prompt" value="${(cfg && cfg.price_per_1m_prompt != null) ? cfg.price_per_1m_prompt : 0}">
+        </div>
+        <div class="field">
+          <label for="price_per_1m_completion">Completion / 1M tokens ($)</label>
+          <input type="number" step="0.01" min="0" id="price_per_1m_completion" value="${(cfg && cfg.price_per_1m_completion != null) ? cfg.price_per_1m_completion : 0}">
+        </div>
       </div>
       <div class="btn-row">
         <button type="button" class="btn btn-secondary" id="btn-test">Test Connection</button>
@@ -564,7 +619,7 @@ async function renderSettings() {
   const panes = document.getElementById('provider-panes');
   let providerActive = provider;
   function renderPanes() {
-    const isOpen = providerActive === 'openrouter';
+    const isOpen = BEDROCK_ENABLED ? providerActive === 'openrouter' : true;
     panes.innerHTML = `
       ${isOpen ? `
         <div class="field">
@@ -606,15 +661,17 @@ async function renderSettings() {
 
   function collect() {
     const g = (id) => (document.getElementById(id) ? document.getElementById(id).value : '');
-    const isOpen = providerActive === 'openrouter';
+
     return {
-      provider: providerActive,
+      provider: BEDROCK_ENABLED ? providerActive : 'openrouter',
       openrouter_api_key: g('openrouter_api_key'),
       openrouter_model: g('openrouter_model'),
       bedrock_access_key: g('bedrock_access_key'),
       bedrock_secret_key: g('bedrock_secret_key'),
       bedrock_region: g('bedrock_region'),
       bedrock_model: g('bedrock_model'),
+      price_per_1m_prompt: parseFloat(g('price_per_1m_prompt')) || 0,
+      price_per_1m_completion: parseFloat(g('price_per_1m_completion')) || 0,
     };
   }
 
@@ -656,20 +713,149 @@ function renderBuild() {
 
 /* --- Stage 0: template gallery --------------------------------- */
 async function renderBuildGallery() {
+  const PRESETS = {
+    "modern": { font: "sans", header_alignment: "center", header_divider: true, section_divider: true, heading_case: "upper" },
+    "classic": { font: "serif", header_alignment: "center", header_divider: true, section_divider: true, heading_case: "title" },
+    "minimal": { font: "sans", header_alignment: "left", header_divider: false, section_divider: false, heading_case: "upper" },
+    "awesome-cv": { font: "sans", header_alignment: "left", header_divider: true, section_divider: true, heading_case: "upper" },
+    "deedy-resume": { font: "sans", header_alignment: "center", header_divider: true, section_divider: true, heading_case: "upper" },
+    "cvresume": { font: "serif", header_alignment: "left", header_divider: true, section_divider: true, heading_case: "upper" },
+    "universal-resume": { font: "sans", header_alignment: "center", header_divider: true, section_divider: true, heading_case: "upper" },
+    "newfuture-cv": { font: "sans", header_alignment: "center", header_divider: false, section_divider: false, heading_case: "upper" },
+  };
+
   const render = () => {
+    const config = CURRENT_CV.template_config || PRESETS[CURRENT_CV.template || 'modern'];
+    
     app.innerHTML = `
       <div class="view-header">
-        <h1>Build — pick a template</h1>
-        <p>Choose a template to fill with your details, or start with the blank layout.</p>
+        <h1>Build — customize your layout</h1>
+        <p>Adjust the visual style of your CV. Changes are reflected in the live preview.</p>
       </div>
-      <div class="btn-row mb">
-        <button class="btn btn-secondary" id="btn-pick-library">${icon('library')} My CVs</button>
-        <button class="btn btn-ghost" id="btn-clear">Reset</button>
-      </div>
-      <div class="tpl-grid">${buildGalleryCardHTML()}</div>`;
-    bindBuildGallery();
+      <div class="editor-grid">
+        <div class="editor-form-pane">
+          <div class="card">
+            <h2>Layout Toggles</h2>
+            <div class="field">
+              <label>Header Alignment</label>
+              <div class="segmented">
+                <button type="button" class="${config.header_alignment === 'left' ? 'active' : ''}" data-cfg="header_alignment" data-val="left">Left</button>
+                <button type="button" class="${config.header_alignment === 'center' ? 'active' : ''}" data-cfg="header_alignment" data-val="center">Center</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Font</label>
+              <div class="segmented">
+                <button type="button" class="${config.font === 'sans' ? 'active' : ''}" data-cfg="font" data-val="sans">Sans</button>
+                <button type="button" class="${config.font === 'serif' ? 'active' : ''}" data-cfg="font" data-val="serif">Serif</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Header Divider</label>
+              <button type="button" class="btn btn-sm ${config.header_divider ? 'btn-primary' : 'btn-secondary'}" data-cfg="header_divider" data-val="${!config.header_divider}">
+                ${config.header_divider ? 'On' : 'Off'}
+              </button>
+            </div>
+            <div class="field">
+              <label>Section Divider</label>
+              <button type="button" class="btn btn-sm ${config.section_divider ? 'btn-primary' : 'btn-secondary'}" data-cfg="section_divider" data-val="${!config.section_divider}">
+                ${config.section_divider ? 'On' : 'Off'}
+              </button>
+            </div>
+            <div class="field">
+              <label>Heading Case</label>
+              <div class="segmented">
+                <button type="button" class="${config.heading_case === 'upper' ? 'active' : ''}" data-cfg="heading_case" data-val="upper">UPPERCASE</button>
+                <button type="button" class="${config.heading_case === 'title' ? 'active' : ''}" data-cfg="heading_case" data-val="title">Title Case</button>
+              </div>
+            </div>
+            <div class="field mt">
+              <label>Presets</label>
+              <div class="tpl-opts">
+                ${Object.keys(PRESETS).map(id => `
+                  <button type="button" class="tpl-opt ${CURRENT_CV.template === id ? 'active' : ''}" data-preset="${id}">
+                    <span class="tpl-opt-name">${esc(templateNameForId(id) || id)}</span>
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+            <div class="btn-row mt">
+              <button class="btn btn-primary" id="btn-continue">Continue to form →</button>
+              <button class="btn btn-ghost" id="btn-clear">Reset</button>
+            </div>
+          </div>
+        </div>
+        <div class="editor-preview-pane">
+          <div class="preview-wrap">
+            <div class="preview-frame">
+              <div class="preview-toolbar">
+                <span class="title">Live Layout Preview</span>
+              </div>
+              <div class="preview-viewport">
+                <div class="preview-page">
+                  <iframe id="build-preview" title="CV preview"></iframe>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+
+    bindTogglePicker();
+    updateBuildPreview();
   };
-  await ensureTemplateCatalog();
+
+  function updateBuildPreview() {
+    const update = async () => {
+      const frame = document.getElementById('build-preview');
+      if (!frame) return;
+      try {
+        const r = await api('/api/export/preview', {
+          method: 'POST',
+          body: { cv: CURRENT_CV, template: CURRENT_CV.template || 'modern' },
+        });
+        const f = document.getElementById('build-preview');
+        if (f) f.srcdoc = (r && r.html) || '';
+      } catch (e) { console.error('Preview failed', e); }
+    };
+
+    if (window.buildPreviewTimer) clearTimeout(window.buildPreviewTimer);
+    window.buildPreviewTimer = setTimeout(update, 300);
+  }
+
+  function bindTogglePicker() {
+    app.querySelectorAll('[data-cfg]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.cfg;
+        const val = btn.dataset.val === 'true' ? true : btn.dataset.val === 'false' ? false : btn.dataset.val;
+        
+        CURRENT_CV.template_config = CURRENT_CV.template_config || { ...PRESETS[CURRENT_CV.template || 'modern'] };
+        CURRENT_CV.template_config[key] = val;
+        
+        markDirty();
+        render();
+        updateBuildPreview();
+      });
+    });
+
+    app.querySelectorAll('[data-preset]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.preset;
+        CURRENT_CV.template = id;
+        CURRENT_CV.template_config = { ...PRESETS[id] };
+        markDirty();
+        render();
+        updateBuildPreview();
+      });
+    });
+
+    const cont = document.getElementById('btn-continue');
+    if (cont) cont.addEventListener('click', () => { BUILD_STATE.stage = 1; renderBuild(); });
+    
+    const clear = document.getElementById('btn-clear');
+    if (clear) clear.addEventListener('click', () => confirmReset(() => renderBuild()));
+  }
+
   render();
 }
 
@@ -966,13 +1152,15 @@ function bindBuild() {
       const kind = btn.dataset.assist;
       const note = form.querySelector('.assist-note');
       setButtonLoading(btn, true, 'Generating…');
-      try {
-        const r = await api('/api/cv/assist', {
-          method: 'POST',
-          body: { kind, cv: c, job_description: (OPT_STATE && OPT_STATE.jobDescription) || null },
-        });
-        const text = (r && r.text) || '';
-        if (kind === 'summary') {
+    try {
+      const r = await api('/api/cv/assist', {
+        method: 'POST',
+        body: { kind, cv: c, job_description: (OPT_STATE && OPT_STATE.jobDescription) || null },
+      });
+      addUsage(r.usage);
+      const text = (r && r.text) || '';
+      if (kind === 'summary') {
+
           c.summary = text;
           const ta = form.querySelector('.summary-input');
           if (ta) ta.value = text;
@@ -1514,10 +1702,12 @@ function parseAndShow(fileInput) {
   result.innerHTML = skeletonHTML('parse');
   const fd = new FormData();
   fd.append('file', file);
-  api('/api/cv/parse', { method: 'POST', body: fd })
-    .then((parsed) => {
-      // Fresh CV enters the pipeline: wipe any artifacts from a previously
-      // loaded CV (report/suggestions/gaps/chat). Step stays 0 (upload result
+    api('/api/cv/parse', { method: 'POST', body: fd })
+      .then((parsed) => {
+        addUsage(parsed.usage);
+        // Fresh CV enters the pipeline: wipe any artifacts from a previously
+        // loaded CV (report/suggestions/gaps/chat). Step stays 0 (upload result
+
       // screen); the fresh parse re-sets session_id/imageMode/confidenceFlags
       // right below, which resetOptimizeState deliberately does not touch.
       resetOptimizeState(0);
@@ -1908,14 +2098,16 @@ function bindOptimize(step) {
       if (gapEl) gapEl.innerHTML = skeletonHTML('gaps');
       const resEl = document.getElementById('analysis-result');
       if (resEl) resEl.innerHTML = skeletonHTML('dashboard');
-      try {
-        const cv = CURRENT_CV;
-        const report = await api('/api/cv/analyze', {
-          method: 'POST',
-          body: { cv, text: s.text, job_description: s.jobDescription, session_id: OPT_STATE.session_id },
-        });
-        s.report = report;
-        // First analysis becomes the delta baseline (§4.6).
+    try {
+      const cv = CURRENT_CV;
+      const report = await api('/api/cv/analyze', {
+        method: 'POST',
+        body: { cv, text: s.text, job_description: s.jobDescription, session_id: OPT_STATE.session_id },
+      });
+      addUsage(report.usage);
+      s.report = report;
+      // First analysis becomes the delta baseline (§4.6).
+
         if (s.baseScore === null || !s.scoreHistory.length) s.baseScore = report.ats_score || 0;
         s.scoreHistory = (s.scoreHistory || []).concat([report.ats_score || 0]);
         if (report.session_warning) s.sessionWarning = report.session_warning;
@@ -1925,13 +2117,15 @@ function bindOptimize(step) {
         bindReportNav(resEl);
         toast('Analysis complete', 'success');
         // Gap analysis runs in parallel with the same body; failures are non-blocking.
-        try {
-          const gaps = await api('/api/cv/gaps', {
-            method: 'POST',
-            body: { cv, text: s.text, job_description: s.jobDescription, session_id: OPT_STATE.session_id },
-          });
-          s.gaps = gaps;
-          if (gaps.session_warning) s.sessionWarning = gaps.session_warning;
+    try {
+      const gaps = await api('/api/cv/gaps', {
+        method: 'POST',
+        body: { cv, text: s.text, job_description: s.jobDescription, session_id: OPT_STATE.session_id },
+      });
+      addUsage(gaps.usage);
+      s.gaps = gaps;
+      if (gaps.session_warning) s.sessionWarning = gaps.session_warning;
+
           markDirty();
           bindGapsPanel(gaps);
         } catch (err) {
@@ -1966,13 +2160,15 @@ function bindOptimize(step) {
       setButtonLoading(btn, true, 'Generating suggestions…');
       const listEl = document.getElementById('sugg-list');
       if (listEl) listEl.innerHTML = skeletonHTML('suggestions');
-      try {
-        const r = await api('/api/cv/tailor/suggest', {
-          method: 'POST',
-          body: { cv: CURRENT_CV, text: s.text, job_description: s.jobDescription, session_id: OPT_STATE.session_id },
-        });
-        s.suggestions = (r.suggestions || []).map((sg) => ({ ...sg, _state: 'pending' }));
-        s.suggestionsStale = false;
+    try {
+      const r = await api('/api/cv/tailor/suggest', {
+        method: 'POST',
+        body: { cv: CURRENT_CV, text: s.text, job_description: s.jobDescription, session_id: OPT_STATE.session_id },
+      });
+      addUsage(r.usage);
+      s.suggestions = (r.suggestions || []).map((sg) => ({ ...sg, _state: 'pending' }));
+      s.suggestionsStale = false;
+
         if (r.session_warning) s.sessionWarning = r.session_warning;
         markDirty();
         document.getElementById('sugg-list').innerHTML = renderSuggestionList(s.suggestions);
@@ -2337,10 +2533,12 @@ async function applyAccepted() {
     } else {
       toast('0 suggestions changed the CV — the accepted suggestions may target sections not present. Try editing in the editor.', 'info');
     }
-    // §4.1 — the loop continues: show the new score + export instead of dumping
-    // the user into the Editor.
-    OPT_STATE.step = 4;
-    renderOptimize();
+    // After applying, take the user straight to the Editor (with a review
+    // banner) so they can pick a template + accent color — no forced
+    // "download or keep editing" choice.
+    OPT_STATE.step = 4; // preserve results step for later navigation back
+    OPTIMIZE_REVIEW_PENDING = true;
+    location.hash = '#/editor';
   } catch (err) {
     toast('Failed to apply suggestions: ' + err.message, 'error');
   } finally {
@@ -2472,6 +2670,7 @@ function bindAssistantPanel(panel) {
           session_id: OPT_STATE.session_id,
         },
       });
+      addUsage(r.usage);
       CHAT_LOG.push({
         role: 'assistant',
         text: (r && r.reply) || '',
@@ -2596,9 +2795,31 @@ function refreshChatAfterApply() {
 /* ============================================================
    VIEW: Editor / Preview
    ============================================================ */
+// One-shot green banner shown in the Editor right after the user applies
+// accepted optimize suggestions — summarizes what changed and nudges them to
+// pick a template + accent color before exporting.
+function optimizeReviewBanner() {
+  if (!OPTIMIZE_REVIEW_PENDING) return '';
+  const applied = OPT_STATE.suggestions.filter((x) => x._state === 'applied');
+  if (!applied.length) return '';
+  const extraLine = applied.length > 5 ? ` + ${applied.length - 5} more` : '';
+  const titles = applied.slice(0, 5).map((a) => esc(a.title || a.section)).filter(Boolean);
+  return `
+    <div class="banner success optimize-review-banner">
+      <div class="banner-body">
+        <h3>${icon('check')} Suggestions applied</h3>
+        <p><strong>${esc(applied.length)}</strong> AI suggestion${applied.length === 1 ? '' : 's'} applied to your CV.</p>
+        <p class="small muted">${titles.join(' · ')}${extraLine}</p>
+        <p>Review your CV below, then choose a <strong>template</strong> and <strong>accent color</strong> in the &ldquo;Summary &amp; Template&rdquo; section before exporting.</p>
+        <button type="button" class="btn btn-secondary btn-sm" id="btn-review-template">${icon('edit')} Choose template &amp; color</button>
+      </div>
+    </div>`;
+}
+
 function renderEditor(route) {
   const s = OPT_STATE;
   const fromOptimize = !!(s.report || s.suggestions.length);
+  const reviewBanner = optimizeReviewBanner();
   const imageBanner = OPT_STATE.imageMode
     ? `<div class="banner neutral"><div class="banner-body"><p>This CV was parsed from a scanned PDF with little or no machine-readable text, so the content below may be incomplete. Review and edit the fields before exporting.</p></div></div>`
     : '';
@@ -2609,10 +2830,12 @@ function renderEditor(route) {
   app.innerHTML = `
     <div class="view-header">
       <h1>Editor &amp; Preview</h1>
-      ${fromOptimize ? `<p class="small"><span class="status-dot on"></span>Loaded with optimization data — tweak, then export.</p>` : ''}
+      ${(!reviewBanner && fromOptimize) ? `<p class="small"><span class="status-dot on"></span>Loaded with optimization data — tweak, then export.</p>` : ''}
     </div>
     <div class="editor-grid">
       <div class="editor-form-pane">
+        <div id="editor-live-region" class="sr-only" aria-live="polite">${esc(EDITOR_ANNOUNCEMENT)}</div>
+        ${reviewBanner}
         ${imageBanner}
         ${editorJumpNav()}
         ${editorFormHTML()}
@@ -2653,6 +2876,8 @@ function renderEditor(route) {
   scheduleEditorPreview(true);
   bindPreviewControls();
   updateDirtyIndicator();
+  // The review banner is a one-shot: it should only appear once per apply.
+  OPTIMIZE_REVIEW_PENDING = false;
 }
 
 // Sticky "On this CV" jump-nav — shown only when the CV spans >3 sections (§5.2).
@@ -2799,9 +3024,17 @@ function edDateEnd(k, label, val, i, kind) {
 }
 
 function edItem(kind, i, head, fields, extra) {
-  return `<div class="repeater-item" data-index="${i}">
-    <div class="item-head"><span>${head}</span><span class="item-actions">${moveBtns(kind, i)}<button type="button" class="btn btn-ghost btn-sm" data-eddup="${kind}:${i}" title="Duplicate item">${icon('copy')}</button><button type="button" class="remove-btn" data-dremove="${kind}:${i}">Remove</button></span></div>
+  return `<div class="repeater-item editor-repeater-item" data-index="${i}" data-editor-drop="item" data-drag-kind="${kind}" data-drag-index="${i}">
+    <div class="item-head"><span class="item-title-wrap"><span class="drag-handle" data-editor-drag="item" data-drag-kind="${kind}" data-drag-index="${i}" draggable="true" role="button" tabindex="0" aria-label="Drag ${head} to reorder" title="Drag to reorder">${icon('grip')}</span><span>${head}</span></span><span class="item-actions">${moveBtns(kind, i)}<button type="button" class="btn btn-ghost btn-sm" data-eddup="${kind}:${i}" title="Duplicate item">${icon('copy')}</button><button type="button" class="remove-btn" data-dremove="${kind}:${i}">Remove</button></span></div>
     <div class="fields">${fields}</div>${extra || ''}
+  </div>`;
+}
+
+function editorBulletRow(kind, itemIndex, bulletIndex, value, textareaAttr, deleteAttr) {
+  return `<div class="bullet-row editor-bullet-row" data-editor-drop="bullet" data-drag-kind="${kind}" data-drag-item="${itemIndex}" data-drag-bullet="${bulletIndex}">
+    <span class="drag-handle drag-handle-small" data-editor-drag="bullet" data-drag-kind="${kind}" data-drag-item="${itemIndex}" data-drag-bullet="${bulletIndex}" draggable="true" role="button" tabindex="0" aria-label="Drag bullet ${bulletIndex + 1} to reorder" title="Drag to reorder">${icon('grip')}</span>
+    <textarea class="bullet-grow" rows="1" ${textareaAttr}>${esc(value)}</textarea>
+    <button type="button" data-edbdel="${deleteAttr}" aria-label="Remove bullet">${icon('x')}</button>
   </div>`;
 }
 
@@ -2811,7 +3044,7 @@ function expItem(x, i) {
      ${edField('location', 'Location', x.location, i)}
      ${edDate('dates.start', 'Start', x.dates.start, i)}${edDateEnd('dates.end', 'End', x.dates.end, i, 'experience')}
      <div class="full"><label>Bullets</label><div data-edbullets="${i}">
-       ${(x.bullets && x.bullets.length ? x.bullets : ['']).map((b, bi) => `<div class="bullet-row">${moveBulletBtns('experience', i, bi)}<textarea class="bullet-grow" rows="1" data-edbullet="${i}" data-bi="${bi}">${esc(b)}</textarea><button type="button" data-edbdel="experience:${i}:${bi}" aria-label="Remove bullet">${icon('x')}</button></div>`).join('')}
+        ${(x.bullets && x.bullets.length ? x.bullets : ['']).map((b, bi) => editorBulletRow('experience', i, bi, b, `data-edbullet="${i}" data-bi="${bi}"`, `experience:${i}:${bi}`)).join('')}
      </div><button type="button" class="btn btn-ghost btn-sm" data-edbadd="experience:${i}">+ bullet</button></div>`);
 }
 function eduItem(x, i) {
@@ -2830,7 +3063,7 @@ function projItem(x, i) {
     `${edField('name', 'Name', x.name, i)}${edField('link', 'Link', x.link, i)}
      <div class="full"><label>Description</label><textarea data-edprojectdesc="${i}">${esc(x.description)}</textarea></div>
      <div class="full"><label>Bullets</label><div data-edpbullets="${i}">
-       ${(x.bullets && x.bullets.length ? x.bullets : ['']).map((b, bi) => `<div class="bullet-row">${moveBulletBtns('projects', i, bi)}<textarea class="bullet-grow" rows="1" data-edpbullet="${i}" data-bi="${bi}">${esc(b)}</textarea><button type="button" data-edpbdel="projects:${i}:${bi}" aria-label="Remove bullet">${icon('x')}</button></div>`).join('')}
+        ${(x.bullets && x.bullets.length ? x.bullets : ['']).map((b, bi) => editorBulletRow('projects', i, bi, b, `data-edpbullet="${i}" data-bi="${bi}"`, `projects:${i}:${bi}`)).join('')}
      </div><button type="button" class="btn btn-ghost btn-sm" data-edpbadd="projects:${i}">+ bullet</button></div>`);
 }
 function certItem(x, i) {
@@ -2846,7 +3079,7 @@ function customSectionItem(x, i) {
   return edItem('custom_sections', i, `Custom section ${i + 1}`,
     `${edField('title', 'Title', x.title, i)}
      <div class="full"><label>Bullets</label><div data-edcsbullets="${i}">
-       ${(x.bullets && x.bullets.length ? x.bullets : ['']).map((b, bi) => `<div class="bullet-row">${moveBulletBtns('custom_sections', i, bi)}<textarea class="bullet-grow" rows="1" data-edcsbullet="${i}" data-bi="${bi}">${esc(b)}</textarea><button type="button" data-edcsbdel="custom_sections:${i}:${bi}" aria-label="Remove bullet">${icon('x')}</button></div>`).join('')}
+        ${(x.bullets && x.bullets.length ? x.bullets : ['']).map((b, bi) => editorBulletRow('custom_sections', i, bi, b, `data-edcsbullet="${i}" data-bi="${bi}"`, `custom_sections:${i}:${bi}`)).join('')}
      </div><button type="button" class="btn btn-ghost btn-sm" data-edcsbadd="custom_sections:${i}">+ bullet</button></div>`);
 }
 
@@ -2862,7 +3095,7 @@ function editorFormHTML() {
     && !c.projects.length && !c.certifications.length && !c.languages.length
     && !(c.custom_sections || []).length;
   const emptyCard = totallyEmpty
-    ? `<div class="card">${emptyStateHTML('document', 'Start building your CV', 'Use the form below to fill it in — or jump into a guided flow.', `<div class="btn-row center-row"><a class="btn btn-primary" href="#/build">Build a new CV</a><a class="btn btn-secondary" href="#/optimize">Optimize for a job</a></div>`)}</div>`
+    ? `<div class="card">${emptyStateHTML('document', 'Start building your CV', 'Use the form below to fill it in — or start from the Home page.', `<div class="btn-row center-row"><a class="btn btn-primary" href="#/build">Create a new CV</a><a class="btn btn-secondary" href="#/">Go to Home</a></div>`)}</div>`
     : '';
 
   return `
@@ -2876,7 +3109,7 @@ function editorFormHTML() {
     </div>
 
     <div class="card">
-      <h2>Summary &amp; Template</h2>
+      <h2 id="editor-template-section">Summary &amp; Template</h2>
       <div class="field"><label>Summary</label><textarea class="ed-summary" rows="4">${esc(c.summary)}</textarea>
         <div class="char-count" id="summary-count">${(c.summary || '').length.toLocaleString()} / 3,000</div></div>
       ${templatePickerHTML()}
@@ -2908,6 +3141,13 @@ function bindEditor() {
 
   // template/accent
   bindTemplatePicker(root);
+
+  // Review banner CTA → jump to the template/accent section (§ editor landing).
+  const tplBtn = root.querySelector('#btn-review-template');
+  if (tplBtn) tplBtn.addEventListener('click', () => {
+    const target = root.querySelector('#editor-template-section');
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   // skill chip rows (rendered from the model after each re-render)
   root.querySelectorAll('[data-edskill-chips]').forEach((host) => {
@@ -3054,6 +3294,7 @@ function bindEditor() {
     setButtonLoading(assistBtn, true, 'Generating…');
     try {
       const r = await api('/api/cv/assist', { method: 'POST', body: { kind: 'summary', cv: c, job_description: (OPT_STATE && OPT_STATE.jobDescription) || null } });
+      addUsage(r.usage);
       c.summary = (r && r.text) || '';
       const ta = root.querySelector('.ed-summary');
       if (ta) ta.value = c.summary;
@@ -3224,26 +3465,30 @@ async function libraryPicker(onSelect) {
    VIEW: Home (§4.11 landing)
    ============================================================ */
 function renderHome() {
-  const hasContent = !!(CURRENT_CV.personal && CURRENT_CV.personal.name) || !!CURRENT_CV.summary || CURRENT_CV.experience.length;
   app.innerHTML = `
+    <div class="view-header">
+      <h1>Welcome to CVIQ</h1>
+      <p>Create a professional, ATS-friendly CV in minutes with AI assistance.</p>
+    </div>
     <div class="home-hero">
-      <img src="/assets/logo_text.png" alt="CVIQ" class="home-logo" />
-      <h1>Build, optimize, and export ATS-friendly CVs</h1>
-      <p>Create a CV from scratch, tailor it to a job description with AI, and download a clean PDF or Word file.</p>
-    </div>
-    <div class="home-cards">
-      <a class="home-card" href="#/build"><span class="home-ico">${icon('document')}</span><h2>Build a new CV</h2><p>Start from a template or a blank canvas.</p></a>
-      <a class="home-card" href="#/optimize"><span class="home-ico">${icon('target')}</span><h2>Optimize for a job</h2><p>Analyze against a job description and get tailored suggestions.</p></a>
-      <a class="home-card" href="#/library"><span class="home-ico">${icon('library')}</span><h2>My CVs</h2><p>Open, rename, duplicate, export or delete your saved CVs.</p></a>
-    </div>
-    <div class="btn-row center-row">
-      <button class="btn btn-secondary" id="home-pick-tpl">${icon('sparkles')} Pick a template</button>
-      ${hasContent ? `<button class="btn btn-secondary" id="home-save">${icon('save')} Save current as new</button>` : ''}
+      <div class="home-cards">
+        <a href="#/build" class="home-card">
+          <span class="home-ico">${icon('plus')}</span>
+          <h2>Create new CV</h2>
+          <p>Start from a blank sheet and build your professional profile from scratch.</p>
+        </a>
+        <a href="#/optimize" class="home-card">
+          <span class="home-ico">${icon('upload')}</span>
+          <h2>Upload & optimize</h2>
+          <p>Import your existing CV and tailor it to a specific job description.</p>
+        </a>
+        <a href="#/library" class="home-card">
+          <span class="home-ico">${icon('library')}</span>
+          <h2>My CVs</h2>
+          <p>Manage, edit and export your saved CVs.</p>
+        </a>
+      </div>
     </div>`;
-  const pick = app.querySelector('#home-pick-tpl');
-  if (pick) pick.addEventListener('click', () => { BUILD_STATE.stage = 0; BUILD_STATE.templateId = null; location.hash = '#/build'; });
-  const save = app.querySelector('#home-save');
-  if (save) save.addEventListener('click', () => saveCurrentAsNew());
 }
 
 /* ============================================================
@@ -3256,7 +3501,7 @@ async function renderLibrary() {
       <p>Every design you've saved to the library, with one-click open, export and manage.</p>
     </div>
     <div class="btn-row mb">
-      <a href="#/build" class="btn btn-primary">${icon('plus')} Upload new CV</a>
+      <a href="#/optimize" class="btn btn-primary">${icon('plus')} Upload new CV</a>
       ${(CURRENT_CV.personal && CURRENT_CV.personal.name) || CURRENT_CV.summary || CURRENT_CV.experience.length ? `<button class="btn btn-secondary" id="lib-save-current">${icon('save')} Save current as new</button>` : ''}
     </div>
     <div id="lib-grid">${skeletonHTML('library')}</div>`;
@@ -3286,6 +3531,9 @@ function libCardHTML(e) {
   if (jd) chips.push(`<span class="chip">${icon('target')} ${esc(jd)}…</span>`);
   const updated = e.updated ? new Date(e.updated).toLocaleString() : '';
   return `<div class="lib-card" data-lib-id="${esc(e.id)}">
+    <div class="lib-card-preview" data-lib-preview="${esc(e.id)}" data-lib-open="${esc(e.id)}" title="Open this CV">
+      <div class="lib-preview-placeholder">${icon('image')}</div>
+    </div>
     <div class="lib-card-head"><strong>${esc(e.name || 'Untitled CV')}</strong><span class="small muted">${esc(updated)}</span></div>
     <div class="chip-wrap mb">${chips.join('') || '<span class="small muted">No metadata</span>'}</div>
     <div class="btn-row">
@@ -3307,6 +3555,29 @@ function bindLibraryCards() {
       location.hash = '#/editor';
     } catch (err) { toast(err.message, 'error'); }
   }));
+
+  const previewObserver = new IntersectionObserver((entries) => {
+    entries.forEach(async (entry) => {
+      if (!entry.isIntersecting) return;
+      const el = entry.target;
+      const id = el.dataset.libPreview;
+      previewObserver.unobserve(el);
+      try {
+        const r = await api(`/api/library/${id}/preview`);
+        const frame = document.createElement('iframe');
+        frame.className = 'lib-preview-frame';
+        frame.setAttribute('aria-label', 'CV preview');
+        frame.srcdoc = (r && r.html) || '';
+        el.innerHTML = '';
+        el.appendChild(frame);
+      } catch (err) {
+        el.innerHTML = `<div class="lib-preview-error">${icon('alert')} <span class="small muted">Preview unavailable</span></div>`;
+      }
+    });
+  }, { rootMargin: '100px' });
+
+  app.querySelectorAll('[data-lib-preview]').forEach(el => previewObserver.observe(el));
+
   app.querySelectorAll('[data-lib-rename]').forEach((b) => b.addEventListener('click', async () => {
     try {
       const rec = await api(`/api/library/${b.dataset.libRename}`);
@@ -3596,6 +3867,85 @@ function onMoveClick(e) {
   if (bup) { const p = bup.dataset.bmoveup.split(':'); moveBullet(p[0], parseInt(p[1], 10), parseInt(p[2], 10), -1); return; }
   const bdown = e.target.closest('[data-bmovedown]');
   if (bdown) { const p = bdown.dataset.bmovedown.split(':'); moveBullet(p[0], parseInt(p[1], 10), parseInt(p[2], 10), 1); }
+}
+
+let EDITOR_DRAG = null;
+let EDITOR_ANNOUNCEMENT = '';
+
+function clearEditorDropStates() {
+  app.querySelectorAll('.is-dragging, .drop-target').forEach((el) => {
+    el.classList.remove('is-dragging', 'drop-target');
+  });
+}
+
+function dragLabel(kind, isBullet) {
+  if (isBullet) return `${EDITOR_SECTION_LABELS[kind] || 'Section'} bullet`;
+  return EDITOR_SECTION_LABELS[kind] || 'CV section item';
+}
+
+function onEditorDragStart(e) {
+  const handle = e.target.closest('[data-editor-drag]');
+  if (!handle || e.target.closest('input, textarea, select, button, a')) return;
+  const isBullet = handle.dataset.editorDrag === 'bullet';
+  const kind = handle.dataset.dragKind;
+  const itemIndex = parseInt(handle.dataset.dragItem ?? handle.dataset.dragIndex, 10);
+  const bulletIndex = isBullet ? parseInt(handle.dataset.dragBullet, 10) : null;
+  if (!kind || Number.isNaN(itemIndex) || (isBullet && Number.isNaN(bulletIndex))) return;
+  EDITOR_DRAG = { kind, itemIndex, bulletIndex, isBullet };
+  handle.closest(isBullet ? '[data-editor-drop="bullet"]' : '[data-editor-drop="item"]')?.classList.add('is-dragging');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', `${kind}:${itemIndex}:${bulletIndex ?? ''}`);
+  }
+}
+
+function validEditorDrop(target) {
+  if (!EDITOR_DRAG || !target) return false;
+  const kind = target.dataset.dragKind;
+  if (kind !== EDITOR_DRAG.kind) return false;
+  const isBullet = target.dataset.editorDrop === 'bullet';
+  if (isBullet !== EDITOR_DRAG.isBullet) return false;
+  if (isBullet && parseInt(target.dataset.dragItem, 10) !== EDITOR_DRAG.itemIndex) return false;
+  const targetIndex = parseInt(isBullet ? target.dataset.dragBullet : target.dataset.dragIndex, 10);
+  return !Number.isNaN(targetIndex) && targetIndex !== (isBullet ? EDITOR_DRAG.bulletIndex : EDITOR_DRAG.itemIndex);
+}
+
+function onEditorDragOver(e) {
+  const target = e.target.closest('[data-editor-drop]');
+  if (!validEditorDrop(target)) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  app.querySelectorAll('.drop-target').forEach((el) => { if (el !== target) el.classList.remove('drop-target'); });
+  target.classList.add('drop-target');
+}
+
+function onEditorDrop(e) {
+  const target = e.target.closest('[data-editor-drop]');
+  if (!validEditorDrop(target)) return;
+  e.preventDefault();
+  const drag = EDITOR_DRAG;
+  const list = CURRENT_CV[drag.kind];
+  const targetIndex = parseInt(drag.isBullet ? target.dataset.dragBullet : target.dataset.dragIndex, 10);
+  const sourceIndex = drag.isBullet ? drag.bulletIndex : drag.itemIndex;
+  const values = drag.isBullet ? list[drag.itemIndex]?.bullets : list;
+  if (!Array.isArray(values)) return;
+  let insertAt = sourceIndex < targetIndex ? targetIndex + 1 : targetIndex;
+  const [value] = values.splice(sourceIndex, 1);
+  if (sourceIndex < insertAt) insertAt -= 1;
+  values.splice(Math.max(0, Math.min(insertAt, values.length)), 0, value);
+  const destination = Math.max(0, Math.min(insertAt, values.length - 1));
+  markDirty();
+  markSuggestionsStale();
+  const label = dragLabel(drag.kind, drag.isBullet);
+  EDITOR_ANNOUNCEMENT = `Moved ${label} ${sourceIndex + 1} to position ${destination + 1}.`;
+  EDITOR_DRAG = null;
+  clearEditorDropStates();
+  rerenderCurrentView();
+}
+
+function onEditorDragEnd() {
+  EDITOR_DRAG = null;
+  clearEditorDropStates();
 }
 
 function moveItem(kind, i, dir) {
